@@ -1,0 +1,305 @@
+PERSONAL GALLERY - PROJECT REQUIREMENTS
+
+Repository : https://github.com/rajeevdreams25/test-code
+Version    : 1.0
+Date       : 2026-08-03
+Status     : Implemented
+
+1. PURPOSE
+A web application that lets a registered user store pictures privately and
+share any single picture publicly through a link. It must guarantee two
+things at once:
+  a) By default, a user's images are visible only to that user.
+  b) A user can make one image readable by anyone, without exposing the rest
+     of their gallery, and can withdraw that access later.
+Everything below serves those two properties.
+
+2. SCOPE
+2.1 In scope
+  - Email + password registration and login
+  - A private dashboard listing the logged-in user's images
+  - Uploading image files
+  - Editing an image's title and description, and replacing the file
+  - Deleting an image
+  - Creating and revoking a public share link for a single image
+  - A public page rendering one shared image without login
+2.2 Out of scope for 1.0
+  - Password reset and email verification
+  - Albums, folders, tags, search
+  - Comments, likes, social features
+  - Multiple users per gallery, sharing between accounts
+  - Image editing and thumbnail generation
+  - Admin or moderation interface
+
+3. USERS
+  Owner    A registered, logged-in user. Full control over their own images
+           and nobody else's.
+  Visitor  Anyone holding a share link. Not logged in. Sees exactly one
+           image - the one the link points at.
+
+4. FUNCTIONAL REQUIREMENTS
+4.1 Accounts and authentication
+FR-1   Register with an email address and a password of at least 8 characters.
+FR-2   Email addresses are unique; a duplicate is rejected with HTTP 409.
+FR-3   Passwords are stored only as bcrypt hashes, never written to the
+       database, logs, or any API response in plaintext.
+FR-4   Logging in with a correct email and password returns a signed access
+       token (JWT, HS256).
+FR-5   A wrong email or password is rejected with HTTP 401 and a message that
+       does not reveal which of the two was wrong.
+FR-6   The access token carries an expiry, default 60 minutes.
+FR-7   The client sends the token as an Authorization: Bearer header on every
+       request to a protected endpoint.
+FR-8   A missing, malformed, expired, or invalid token is rejected with 401.
+FR-9   A logged-in user can retrieve their own account details.
+FR-10  Logging out discards the stored token on the client.
+4.2 Image upload
+FR-11  A logged-in user can upload an image file, optionally with a title and
+       a description.
+FR-12  Only JPEG, PNG, GIF, and WebP are accepted; anything else gives 415.
+FR-13  An upload above the configured limit, default 10 MB, gives 413. The
+       limit is enforced server-side while the file is received, not only in
+       the browser.
+FR-14  An empty file is rejected with 400.
+FR-15  Each stored file gets a random, non-guessable name on disk. The
+       original filename is kept as metadata only.
+FR-16  A rejected or failed upload leaves no partial file on disk.
+FR-17  Each image records owner, stored filename, original filename, content
+       type, size, title, description, creation time, and update time.
+FR-18  A newly uploaded image is private; no share link exists until the
+       owner creates one.
+4.3 Viewing and managing images
+FR-19  A user can list their own images, newest first.
+FR-20  The list contains only images owned by the requesting user.
+FR-21  A user can retrieve the metadata and file bytes of their own image.
+FR-22  A user can update the title and description of their own image.
+FR-23  A user can replace the file of an existing image, keeping the same
+       record and share link. The previous file is deleted from disk.
+FR-24  A user can delete their own image. Deletion removes the record, the
+       file on disk, and any active share link.
+FR-25  Any attempt to read, update, delete, or share an image the caller does
+       not own fails with 404, not 403, so the existence of another user's
+       image is not disclosed.
+4.4 Public sharing
+FR-26  A user can generate a public share link for one of their own images.
+FR-27  The link is built on a cryptographically random token of at least 32
+       bytes, so links cannot be guessed or enumerated.
+FR-28  Requesting a link for an already-shared image returns the existing
+       link rather than creating a second one.
+FR-29  Anyone holding the link can view that image with its title and
+       description, without logging in.
+FR-30  The public response exposes no owner information, no internal record
+       identifier, and no path to any other image.
+FR-31  A user can revoke sharing; the previous link then returns 404.
+FR-32  Sharing again after a revocation produces a new, different token, so a
+       leaked link stays dead permanently.
+FR-33  An invalid or unknown share token returns 404 with a message that does
+       not distinguish "never existed" from "was revoked".
+4.5 Web interface
+FR-34  The application provides these pages:
+         /login       login form, public
+         /register    sign-up form, public
+         /dashboard   the user's gallery, login required
+         /s/<token>   a single shared image, public
+FR-35  Visiting a protected page without a valid session redirects to login.
+FR-36  Visiting login or register while already logged in redirects to the
+       dashboard.
+FR-37  A successful login or registration lands on the dashboard.
+FR-38  The dashboard shows a responsive grid with an upload control and, on
+       each image, controls to edit, delete, and share or unshare.
+FR-39  A shared image displays its full public URL with one-click copy.
+FR-40  Deleting an image requires confirmation.
+FR-41  Server errors are shown to the user in readable form, never silently.
+FR-42  If the session expires or is rejected, the stored token is cleared and
+       the user is returned to login.
+FR-43  Private images are not loadable by URL alone. The interface fetches
+       them with the authorization header and renders them from an in-memory
+       object URL, released when no longer needed.
+
+5. NON-FUNCTIONAL REQUIREMENTS
+5.1 Security
+NFR-1  Every endpoint touching a user's own data is protected by token
+       verification. Only the auth and share endpoints are reachable without
+       a token.
+NFR-2  Every image query is constrained by the owner's identifier. Ownership
+       is never checked in the client alone.
+NFR-3  The token signing key comes from configuration and must be changed
+       from its default before any deployment.
+NFR-4  File type and size limits are enforced server-side.
+NFR-5  Client-supplied filenames are never used as paths on disk.
+NFR-6  Cross-origin browser requests are accepted only from configured
+       origins.
+NFR-7  Error responses leak no file paths, stack traces, or evidence of other
+       users' records.
+5.2 Usability
+NFR-8  A new user can go from the landing page to a first uploaded image
+       without documentation.
+NFR-9  The interface is usable at desktop and mobile widths.
+NFR-10 Slow actions show a busy state; failed actions show why.
+5.3 Reliability and data
+NFR-11 Database records and files on disk do not diverge: no orphaned files
+       after a delete, no stale file after a replace.
+NFR-12 Uploads and the database survive an application restart and a
+       container rebuild.
+NFR-13 The schema is created automatically on first start, so a fresh
+       checkout runs without a manual migration step.
+5.4 Maintainability and portability
+NFR-14 All deployment-specific values come from environment variables:
+       signing key, token lifetime, database location, upload directory, size
+       limit, allowed origins, API URL.
+NFR-15 Storage and database choices stay isolated in a few modules, so moving
+       to a networked database or object storage does not change the public
+       API.
+NFR-16 The same source runs both as a local setup with hot reload and as a
+       containerized stack.
+5.5 Performance
+NFR-17 Uploads are streamed to disk in chunks, never held whole in memory.
+NFR-18 A dashboard of tens of images loads without noticeable delay on a
+       local deployment.
+
+6. DATA REQUIREMENTS
+6.1 User
+  id               integer, primary key
+  email            string, unique, indexed, required
+  hashed_password  string, required, bcrypt
+  created_at       timestamp
+6.2 Image
+  id               integer, primary key
+  owner_id         integer, FK -> user.id, indexed, required, cascade delete
+  stored_name      string, unique, required, random name on disk
+  original_name    string, required
+  content_type     string, required
+  size             integer, required, bytes
+  title            string
+  description      text
+  share_token      string, unique, indexed, nullable
+                   NULL = private, a value = publicly shared
+  created_at       timestamp
+  updated_at       timestamp
+6.3 Rules
+  - Deleting a user deletes that user's images.
+  - share_token is the single source of truth for whether an image is public.
+    There is no separate visibility flag that could disagree with it.
+  - Image files live outside the database, in the configured upload
+    directory, named by stored_name.
+
+7. INTERFACE REQUIREMENTS (API)
+  Auth   Method  Path                    Purpose
+  no     POST    /auth/register          create account, get token
+  no     POST    /auth/login             log in, get token
+  yes    GET     /auth/me                current user
+  yes    GET     /images                 list own images
+  yes    POST    /images                 upload an image
+  yes    GET     /images/{id}            own image metadata
+  yes    GET     /images/{id}/file       own image bytes
+  yes    PUT     /images/{id}            update or replace
+  yes    DELETE  /images/{id}            delete
+  yes    POST    /images/{id}/share      create share link
+  yes    DELETE  /images/{id}/share      revoke share link
+  no     GET     /public/{token}         shared image metadata
+  no     GET     /public/{token}/file    shared image bytes
+  no     GET     /health                 liveness check
+  Status codes: 200 ok, 201 created, 204 deleted, 401 missing/invalid token or
+  bad credentials, 404 not found or not owned, 409 email already registered,
+  413 file too large, 415 unsupported type, 422 malformed body.
+
+8. TECHNOLOGY REQUIREMENTS
+8.1 Backend
+  Python            3.11+
+  FastAPI           0.115.6    web framework
+  Uvicorn           0.34.0     ASGI server
+  SQLAlchemy        2.0.36     ORM
+  Pydantic          2.10.4     validation and serialization
+  pydantic-settings 2.7.0      environment configuration
+  email-validator   2.2.0      email format checking
+  python-multipart  0.0.20     multipart file uploads
+  PyJWT             2.10.1     access tokens
+  bcrypt            4.2.1      password hashing
+  Database          SQLite, file-based
+  File storage      local filesystem directory
+8.2 Frontend
+  Node.js           20+
+  React             18.3.1
+  React Router      6.28.0
+  Vite              6.x        build tool and dev server
+  Styling           plain CSS, no UI framework
+8.3 Deployment
+  Docker Engine with the Compose plugin
+  nginx alpine serving the built frontend, with SPA fallback so /dashboard
+  and /s/<token> resolve to the app
+  Two volumes: one for the database, one for uploaded files
+
+9. SYSTEM REQUIREMENTS
+9.1 Server / development machine
+  OS       Windows, macOS, or Linux
+  RAM      2 GB minimum, 4 GB recommended
+  Disk     500 MB for application and dependencies, plus room for uploads
+  Ports    8000 API, 5173 dev frontend, 3000 container frontend
+9.2 Client
+  A current version of Chrome, Firefox, Edge, or Safari with JavaScript and
+  localStorage available.
+9.3 Configuration
+  Backend   SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES, DATABASE_URL, UPLOAD_DIR,
+            MAX_UPLOAD_BYTES, CORS_ORIGINS
+  Frontend  VITE_API_URL, read at build time
+
+10. CONSTRAINTS
+C-1  SQLite is single-writer. Sized for personal use, not many concurrent
+     uploading users.
+C-2  Files are written to a local directory, so the backend cannot scale to
+     multiple machines without shared or object storage.
+C-3  The frontend's API URL is compiled into the bundle by Vite; changing it
+     requires a rebuild, not a restart.
+C-4  The access token is held in browser localStorage, readable by any script
+     running on the page.
+C-5  Access tokens cannot be revoked before expiry; logout only discards the
+     client's copy.
+C-6  The schema is created on startup. Changing models on an existing
+     database requires a migration tool.
+
+11. ASSUMPTIONS
+A-1  Users look after their own share links; anyone holding a link is treated
+     as authorized to see that one image.
+A-2  A share link is unlisted, not secret, and may be indexed if the user
+     distributes it publicly.
+A-3  Any real deployment sits behind HTTPS, so tokens are not sent in clear.
+A-4  Storage capacity is managed by the operator; no per-user quota.
+
+12. ACCEPTANCE CRITERIA
+AC-1   A new visitor can register and lands on the dashboard.
+AC-2   Registering an already-used email is refused.
+AC-3   Logging in with a wrong password is refused.
+AC-4   A request to /images with no token is refused with 401.
+AC-5   A request to /images with a corrupted token is refused with 401.
+AC-6   An uploaded image appears in the uploader's dashboard.
+AC-7   A non-image file is refused with 415.
+AC-8   A file above the size limit is refused with 413.
+AC-9   The owner can fetch their own image bytes.
+AC-10  Editing the title persists the new title.
+AC-11  Replacing the file updates the picture and removes the old file.
+AC-12  A second registered user sees an empty gallery.
+AC-13  The second user gets 404 reading, updating, deleting, or sharing the
+       first user's image.
+AC-14  Sharing produces a link that opens for a logged-out visitor.
+AC-15  Requesting the share link twice returns the same link.
+AC-16  The public response contains no owner or internal identifier.
+AC-17  After revoking, the old link returns 404.
+AC-18  An invented share token returns 404.
+AC-19  Deleting an image removes both the record and the file on disk.
+AC-20  Images and accounts survive a restart of the application.
+AC-21  Opening /dashboard or /s/<token> directly loads the application rather
+       than a server 404.
+Verification status: all 21 criteria verified - 32 automated checks against
+the application and 13 against the running container stack.
+
+13. FUTURE ENHANCEMENTS
+F-1   Password reset by email, and email verification on sign-up.
+F-2   Refresh tokens in httpOnly cookies, with server-side revocation.
+F-3   PostgreSQL and S3-compatible object storage.
+F-4   Alembic migrations.
+F-5   Thumbnail generation, so grids do not download full-size files.
+F-6   Albums, tags, and search.
+F-7   Expiring and password-protected share links.
+F-8   Per-user storage quotas.
+F-9   Bulk upload with drag-and-drop and progress reporting.
+F-10  Rate limiting on login and upload endpoints.
