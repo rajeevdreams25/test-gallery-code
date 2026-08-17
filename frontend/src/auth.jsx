@@ -5,14 +5,13 @@ const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
+  // Nothing to verify when there's no stored token, so don't start in a
+  // loading state at all — that avoids a needless first render pass.
+  const [loading, setLoading] = useState(() => Boolean(tokenStore.get()))
 
   // A token in localStorage only counts as a session if the API still accepts it.
   useEffect(() => {
-    if (!tokenStore.get()) {
-      setLoading(false)
-      return
-    }
+    if (!tokenStore.get()) return
     api
       .me()
       .then(setUser)
