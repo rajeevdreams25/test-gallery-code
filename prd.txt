@@ -1,18 +1,21 @@
 PERSONAL GALLERY - PROJECT REQUIREMENTS
 
 Repository : https://github.com/rajeevdreams25/test-code
-Version    : 1.0
-Date       : 2026-08-03
+Version    : 1.1
+Date       : 2026-08-17
 Status     : Implemented
 
 1. PURPOSE
-A web application that lets a registered user store pictures privately and
-share any single picture publicly through a link. It must guarantee two
-things at once:
+A web application that lets a registered user store pictures privately, share
+any single picture through an unlisted link, and optionally publish pictures
+to a public gallery that anyone can browse. It must guarantee three things at
+once:
   a) By default, a user's images are visible only to that user.
-  b) A user can make one image readable by anyone, without exposing the rest
-     of their gallery, and can withdraw that access later.
-Everything below serves those two properties.
+  b) A user can make one image readable by anyone who holds its link, without
+     exposing the rest of their gallery, and can withdraw that access later.
+  c) An image becomes discoverable by strangers only when its owner
+     explicitly publishes it. Sharing a link never does this on its own.
+Everything below serves those three properties.
 
 2. SCOPE
 2.1 In scope
@@ -21,21 +24,28 @@ Everything below serves those two properties.
   - Uploading image files
   - Editing an image's title and description, and replacing the file
   - Deleting an image
-  - Creating and revoking a public share link for a single image
+  - Creating and revoking an unlisted share link for a single image
   - A public page rendering one shared image without login
-2.2 Out of scope for 1.0
+  - Publishing and unpublishing an image to a public gallery
+  - A public gallery page, browsable without login, loading more photos as
+    the visitor scrolls
+  - Liking and unliking a publicly reachable photo
+2.2 Out of scope for 1.1
   - Password reset and email verification
   - Albums, folders, tags, search
-  - Comments, likes, social features
+  - Comments, follows, and other social features beyond likes
   - Multiple users per gallery, sharing between accounts
   - Image editing and thumbnail generation
-  - Admin or moderation interface
+  - Admin or moderation interface, and reporting of published photos
 
 3. USERS
-  Owner    A registered, logged-in user. Full control over their own images
-           and nobody else's.
-  Visitor  Anyone holding a share link. Not logged in. Sees exactly one
-           image - the one the link points at.
+  Owner     A registered, logged-in user. Full control over their own images
+            and nobody else's.
+  Visitor   Anyone holding a share link, or anyone browsing the public
+            gallery. Not logged in. Sees only published photos and any single
+            image whose link they hold.
+  Reactor   A logged-in user viewing a publicly reachable photo. May like and
+            unlike it, including their own photos.
 
 4. FUNCTIONAL REQUIREMENTS
 4.1 Accounts and authentication
@@ -80,8 +90,8 @@ FR-24  A user can delete their own image. Deletion removes the record, the
 FR-25  Any attempt to read, update, delete, or share an image the caller does
        not own fails with 404, not 403, so the existence of another user's
        image is not disclosed.
-4.4 Public sharing
-FR-26  A user can generate a public share link for one of their own images.
+4.4 Unlisted sharing
+FR-26  A user can generate an unlisted share link for one of their own images.
 FR-27  The link is built on a cryptographically random token of at least 32
        bytes, so links cannot be guessed or enumerated.
 FR-28  Requesting a link for an already-shared image returns the existing
@@ -95,19 +105,67 @@ FR-32  Sharing again after a revocation produces a new, different token, so a
        leaked link stays dead permanently.
 FR-33  An invalid or unknown share token returns 404 with a message that does
        not distinguish "never existed" from "was revoked".
-4.5 Web interface
+4.5 Public gallery
+FR-44  A user can publish one of their own images to the public gallery, and
+       unpublish it again.
+FR-45  Sharing an image never publishes it. An unlisted link stays out of the
+       gallery until the owner publishes it explicitly.
+FR-46  Publishing an image that has no share link mints one, because the
+       gallery addresses image bytes through that token.
+FR-47  Unpublishing removes the image from the gallery but leaves its unlisted
+       link working.
+FR-48  Revoking the share link also unpublishes, since the gallery has no
+       other way to address the file.
+FR-49  Only the owner can publish or unpublish an image; anyone else gets 404.
+FR-50  The gallery lists published images newest first, by publication time.
+FR-51  The gallery is readable without logging in.
+FR-52  A gallery entry exposes only share token, title, description, content
+       type, publication time, and like count - never the owner or an
+       internal record identifier.
+FR-53  The gallery is paginated by an opaque cursor, not by offset, so photos
+       published while a visitor is scrolling cannot cause duplicated or
+       skipped entries.
+FR-54  A page request accepts a limit between 1 and 50, defaulting to 24. A
+       limit outside that range is rejected with 422.
+FR-55  A response carries a cursor for the next page, or null at the end of
+       the feed.
+FR-56  A malformed cursor is rejected with 400.
+FR-57  The visitor's browser requests further pages automatically as the end
+       of the current page approaches, without a "load more" click.
+4.6 Likes
+FR-58  A logged-in user can like and unlike any publicly reachable photo,
+       including one reached by an unlisted link and including their own.
+FR-59  Liking requires an account. An anonymous like attempt is rejected with
+       401, and the interface sends that visitor to the login page instead.
+FR-60  A user can like a given photo at most once; repeating the request
+       leaves the count unchanged rather than failing.
+FR-61  Unliking a photo the user has not liked is safe and leaves the count
+       unchanged.
+FR-62  Like and unlike return the resulting count and whether the caller has
+       the photo liked.
+FR-63  Anyone, logged in or not, can see a photo's like count.
+FR-64  A logged-in viewer sees which photos they have already liked, in the
+       gallery and on a shared photo page.
+FR-65  An owner sees the like count for their published photos on their
+       dashboard.
+FR-66  Likes for an image are deleted with the image, leaving no orphans.
+FR-67  Likes survive unpublishing, so republishing does not reset a count.
+4.7 Web interface
 FR-34  The application provides these pages:
          /login       login form, public
          /register    sign-up form, public
          /dashboard   the user's gallery, login required
+         /explore     the public gallery, public
          /s/<token>   a single shared image, public
 FR-35  Visiting a protected page without a valid session redirects to login.
 FR-36  Visiting login or register while already logged in redirects to the
        dashboard.
 FR-37  A successful login or registration lands on the dashboard.
 FR-38  The dashboard shows a responsive grid with an upload control and, on
-       each image, controls to edit, delete, and share or unshare.
-FR-39  A shared image displays its full public URL with one-click copy.
+       each image, controls to edit, delete, share or unshare, and publish or
+       unpublish.
+FR-39  A shared image displays its full public URL with one-click copy, and a
+       published image is marked as listed in the public gallery.
 FR-40  Deleting an image requires confirmation.
 FR-41  Server errors are shown to the user in readable form, never silently.
 FR-42  If the session expires or is rejected, the stored token is cleared and
@@ -173,15 +231,31 @@ NFR-18 A dashboard of tens of images loads without noticeable delay on a
   title            string
   description      text
   share_token      string, unique, indexed, nullable
-                   NULL = private, a value = publicly shared
+                   NULL = no link, a value = reachable by unlisted link
+  is_public        boolean, not null, default false, indexed
+                   listed in the public gallery
+  published_at     timestamp, nullable, set when published
   created_at       timestamp
   updated_at       timestamp
-6.3 Rules
-  - Deleting a user deletes that user's images.
-  - share_token is the single source of truth for whether an image is public.
-    There is no separate visibility flag that could disagree with it.
+6.3 Like
+  id               integer, primary key
+  image_id         integer, FK -> image.id, indexed, required, cascade delete
+  user_id          integer, FK -> user.id, indexed, required, cascade delete
+  created_at       timestamp
+  unique (image_id, user_id)
+6.4 Rules
+  - Deleting a user deletes that user's images and likes.
+  - Deleting an image deletes its likes.
+  - share_token controls link access; is_public controls listing. They are
+    separate because an unlisted link must not imply discoverability.
+  - is_public true always implies share_token is set, since the gallery
+    addresses image bytes through that token.
   - Image files live outside the database, in the configured upload
     directory, named by stored_name.
+6.5 Schema evolution
+  - create_all builds missing tables but never alters existing ones, so
+    columns added after a database was created are applied by an additive
+    migration step at startup.
 
 7. INTERFACE REQUIREMENTS (API)
   Auth   Method  Path                    Purpose
@@ -194,14 +268,22 @@ NFR-18 A dashboard of tens of images loads without noticeable delay on a
   yes    GET     /images/{id}/file       own image bytes
   yes    PUT     /images/{id}            update or replace
   yes    DELETE  /images/{id}            delete
-  yes    POST    /images/{id}/share      create share link
-  yes    DELETE  /images/{id}/share      revoke share link
-  no     GET     /public/{token}         shared image metadata
+  yes    POST    /images/{id}/share      create unlisted share link
+  yes    DELETE  /images/{id}/share      revoke share link, also unpublishes
+  yes    POST    /images/{id}/publish    list in the public gallery
+  yes    DELETE  /images/{id}/publish    delist, keeping the unlisted link
+  opt    GET     /public/feed            gallery page, ?limit= and ?cursor=
+  opt    GET     /public/{token}         shared image metadata
   no     GET     /public/{token}/file    shared image bytes
+  yes    POST    /public/{token}/like    like a photo
+  yes    DELETE  /public/{token}/like    remove a like
   no     GET     /health                 liveness check
-  Status codes: 200 ok, 201 created, 204 deleted, 401 missing/invalid token or
-  bad credentials, 404 not found or not owned, 409 email already registered,
-  413 file too large, 415 unsupported type, 422 malformed body.
+  "opt" means the endpoint works logged out but returns whether the caller has
+  already liked the photo when a token is supplied.
+  Status codes: 200 ok, 201 created, 204 deleted, 400 malformed cursor, 401
+  missing/invalid token or bad credentials, 404 not found or not owned, 409
+  email already registered, 413 file too large, 415 unsupported type, 422
+  malformed body or out-of-range page limit.
 
 8. TECHNOLOGY REQUIREMENTS
 8.1 Backend
@@ -222,12 +304,17 @@ NFR-18 A dashboard of tens of images loads without noticeable delay on a
   React             18.3.1
   React Router      6.28.0
   Vite              6.x        build tool and dev server
+  ESLint            9.x        flat config, React and hooks rules
   Styling           plain CSS, no UI framework
+  Infinite scroll   IntersectionObserver, no third-party library
 8.3 Deployment
   Docker Engine with the Compose plugin
-  nginx alpine serving the built frontend, with SPA fallback so /dashboard
-  and /s/<token> resolve to the app
+  nginx alpine serving the built frontend, with SPA fallback so /dashboard,
+  /explore, and /s/<token> resolve to the app
   Two volumes: one for the database, one for uploaded files
+8.4 Testing
+  pytest            backend suite, run against a temporary database and
+                    upload directory
 
 9. SYSTEM REQUIREMENTS
 9.1 Server / development machine
@@ -254,14 +341,27 @@ C-4  The access token is held in browser localStorage, readable by any script
      running on the page.
 C-5  Access tokens cannot be revoked before expiry; logout only discards the
      client's copy.
-C-6  The schema is created on startup. Changing models on an existing
-     database requires a migration tool.
+C-6  The schema is created on startup and extended by additive ALTER TABLE.
+     Anything beyond adding a column - renames, type changes, dropped
+     columns - requires a real migration tool.
+C-7  Likes require an account, so a visitor cannot react to a photo without
+     signing up.
+C-8  The gallery has no moderation, reporting, or takedown path. Anything a
+     user publishes is visible to everyone until that user unpublishes it.
+C-9  Gallery pages are ordered by publication time. Republishing a photo
+     moves it back to the top of the feed.
+C-10 Infinite scroll relies on IntersectionObserver, so the gallery does not
+     page on browsers without it.
 
 11. ASSUMPTIONS
 A-1  Users look after their own share links; anyone holding a link is treated
      as authorized to see that one image.
 A-2  A share link is unlisted, not secret, and may be indexed if the user
-     distributes it publicly.
+     distributes it publicly. It is never listed in the public gallery on the
+     strength of being shared.
+A-5  Publishing is understood by the user to mean "strangers may see this".
+     The interface keeps it a separate, deliberate action for that reason.
+A-6  Like counts are a rough signal, not an audited metric.
 A-3  Any real deployment sits behind HTTPS, so tokens are not sent in clear.
 A-4  Storage capacity is managed by the operator; no per-user quota.
 
@@ -287,19 +387,47 @@ AC-17  After revoking, the old link returns 404.
 AC-18  An invented share token returns 404.
 AC-19  Deleting an image removes both the record and the file on disk.
 AC-20  Images and accounts survive a restart of the application.
-AC-21  Opening /dashboard or /s/<token> directly loads the application rather
-       than a server 404.
-Verification status: all 21 criteria verified - 32 automated checks against
-the application and 13 against the running container stack.
+AC-21  Opening /dashboard, /explore, or /s/<token> directly loads the
+       application rather than a server 404.
+AC-22  A shared but unpublished photo does not appear in the gallery.
+AC-23  Publishing puts the photo in the gallery; unpublishing removes it.
+AC-24  Publishing a photo that has no share link mints one, and that link
+       serves the file.
+AC-25  Unpublishing leaves the unlisted link working.
+AC-26  Revoking the share link removes the photo from the gallery.
+AC-27  A second user cannot publish or unpublish someone else's photo.
+AC-28  The gallery is readable while logged out, and exposes no owner or
+       internal identifier.
+AC-29  An anonymous like attempt is refused with 401.
+AC-30  A logged-in user's like raises the count, and liking again does not.
+AC-31  Unliking lowers the count, and unliking again does not.
+AC-32  A logged-in viewer sees which photos they have already liked.
+AC-33  Deleting a photo deletes its likes.
+AC-34  Likes survive unpublishing.
+AC-35  Paging with a cursor covers every published photo exactly once and
+       ends with a null cursor.
+AC-36  An out-of-range page limit is refused, and a malformed cursor
+       returns 400.
+AC-37  A database created before the gallery feature gains the new columns
+       on startup, keeps its rows, and its existing links stay unlisted.
+Verification status: all 37 criteria verified - 83 automated checks in total
+(32 on the original features, 42 on the gallery and likes, 9 on the in-place
+schema upgrade), plus 13 against the running container stack and a 21-test
+pytest suite.
 
 13. FUTURE ENHANCEMENTS
 F-1   Password reset by email, and email verification on sign-up.
 F-2   Refresh tokens in httpOnly cookies, with server-side revocation.
 F-3   PostgreSQL and S3-compatible object storage.
 F-4   Alembic migrations.
-F-5   Thumbnail generation, so grids do not download full-size files.
+F-5   Thumbnail generation, so grids do not download full-size files. This
+      matters most in the public gallery, which loads many photos per page.
 F-6   Albums, tags, and search.
 F-7   Expiring and password-protected share links.
 F-8   Per-user storage quotas.
 F-9   Bulk upload with drag-and-drop and progress reporting.
-F-10  Rate limiting on login and upload endpoints.
+F-10  Rate limiting on login, upload, and like endpoints.
+F-11  Moderation: reporting a published photo, and an admin takedown path.
+F-12  Attribution in the gallery, so a published photo can credit its owner
+      by a display name the owner chooses.
+F-13  A "most liked" ordering alongside newest first.

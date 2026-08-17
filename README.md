@@ -1,6 +1,6 @@
 # Personal Gallery
 
-A personal image gallery. Log in, upload your pictures to a private dashboard, edit or delete them, and generate a public share link for any single image.
+A personal image gallery. Log in, upload your pictures to a private dashboard, edit or delete them, share any single image as an unlisted link, or publish it to a public gallery that anyone can browse and like.
 
 - **Backend** — FastAPI (Python 3.11+), SQLite, local disk storage, JWT auth
 - **Frontend** — React 18 + Vite + React Router
@@ -14,14 +14,16 @@ A personal image gallery. Log in, upload your pictures to a private dashboard, e
 │   │   ├── main.py            # app setup, CORS, router wiring
 │   │   ├── config.py          # settings from env / .env
 │   │   ├── database.py        # SQLite engine + session dependency
-│   │   ├── models.py          # User, Image
+│   │   ├── migrate.py         # additive ALTER TABLE for columns added later
+│   │   ├── models.py          # User, Image, Like
 │   │   ├── schemas.py         # request/response models
 │   │   ├── security.py        # bcrypt hashing, JWT, get_current_user
 │   │   ├── storage.py         # streamed upload to disk, type/size limits
 │   │   └── routers/
 │   │       ├── auth.py        # register, login, me
-│   │       ├── images.py      # CRUD + share (token-protected)
-│   │       └── public.py      # share links (no auth)
+│   │       ├── images.py      # CRUD + share + publish (token-protected)
+│   │       └── public.py      # share links, gallery feed, likes
+│   ├── tests/                 # pytest suite
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── .env.example
@@ -30,12 +32,14 @@ A personal image gallery. Log in, upload your pictures to a private dashboard, e
 │   │   ├── api.js             # fetch wrapper, attaches Bearer token
 │   │   ├── auth.jsx           # AuthProvider / useAuth
 │   │   ├── App.jsx            # routes + route guards
-│   │   ├── pages/             # Login, Register, Dashboard, SharedImage
-│   │   └── components/        # UploadForm, ImageCard
+│   │   ├── pages/             # Login, Register, Dashboard, Explore, SharedImage
+│   │   └── components/        # UploadForm, ImageCard, LikeButton
+│   ├── eslint.config.js
 │   ├── Dockerfile
 │   ├── nginx.conf
 │   └── .env.example
 ├── docker-compose.yml
+├── prd.txt                    # requirements specification
 └── README.md
 ```
 
@@ -49,12 +53,31 @@ A personal image gallery. Log in, upload your pictures to a private dashboard, e
 
 Protected images are never exposed by URL alone: the dashboard fetches each file with the auth header and renders it from a blob URL. The only unauthenticated way to see an image is an explicit share link.
 
-## How sharing works
+## Sharing vs. publishing
 
-- **Share** mints a 32-byte URL-safe random token and stores it on the image. The link is `/s/<token>`.
-- Anyone with that link sees **that one image** — no login, no access to the rest of your gallery. The public response returns only title, description, and content type.
-- **Unshare** sets the token back to `NULL`, and the old link immediately 404s.
-- Re-sharing after a revoke mints a **new** token, so a leaked link stays dead.
+These are two different things, and the distinction is the point:
+
+| | Share | Publish |
+|---|---|---|
+| Who can reach it | anyone with the link | anyone at all |
+| Where it appears | nowhere — **unlisted** | listed in `/explore` |
+| Column | `share_token` | `is_public` |
+
+- **Share** mints a 32-byte URL-safe random token. The link is `/s/<token>`. Anyone with it sees **that one image** — no login, no access to the rest of your gallery. The response returns only title, description, content type, and like count.
+- **Unshare** sets the token back to `NULL`, and the old link immediately 404s. Re-sharing mints a **new** token, so a leaked link stays dead.
+- **Publish** lists the photo in the public gallery. It mints a share token if the photo doesn't have one, since the gallery serves image bytes through that token.
+- **Unpublish** removes it from the gallery but *leaves the unlisted link working*.
+- Revoking the link necessarily unpublishes, because the gallery has no other way to address the file.
+
+Sharing never publishes. A link you sent to one person stays out of the public gallery unless you explicitly publish it.
+
+## The public gallery
+
+`/explore` is readable logged out and lists published photos, newest first.
+
+- **Likes require an account.** That gets a unique `(image_id, user_id)` constraint, which makes double-liking idempotent, makes un-liking possible, and keeps the count meaningful. A logged-out visitor who clicks like is sent to `/login`.
+- The feed sends your token when you have one, so the server can mark which photos you already liked (`liked_by_me`). A stale or invalid token degrades to anonymous rather than erroring.
+- **Pagination is keyset, not `OFFSET`.** The cursor is an opaque base64 of `(published_at, id)`. With `OFFSET`, a photo published while you're scrolling shifts every subsequent page, so you'd see duplicates and miss others. The frontend loads the next page from an `IntersectionObserver` with a 400px margin, so it arrives before you reach the bottom.
 
 ## API
 
@@ -70,12 +93,21 @@ Protected images are never exposed by URL alone: the dashboard fetches each file
 | PUT | `/images/{id}` | ✔ | Update title/description and/or replace file |
 | DELETE | `/images/{id}` | ✔ | Delete image + file on disk |
 | POST | `/images/{id}/share` | ✔ | Create (or return existing) share token |
-| DELETE | `/images/{id}/share` | ✔ | Revoke share link |
-| GET | `/public/{token}` | – | Shared image metadata |
+| DELETE | `/images/{id}/share` | ✔ | Revoke share link (also unpublishes) |
+| POST | `/images/{id}/publish` | ✔ | List in the public gallery (mints a token if needed) |
+| DELETE | `/images/{id}/publish` | ✔ | Delist, keeping the unlisted link |
+| GET | `/public/feed` | optional | Published photos, newest first — `?limit=1..50&cursor=` |
+| GET | `/public/{token}` | optional | Shared image metadata |
 | GET | `/public/{token}/file` | – | Shared image bytes |
+| POST | `/public/{token}/like` | ✔ | Like a photo (idempotent) |
+| DELETE | `/public/{token}/like` | ✔ | Remove your like |
 | GET | `/health` | – | Liveness check |
 
+"optional" means the endpoint works logged out, but sends back a little more when a token is present — `liked_by_me` on the feed and on a shared photo.
+
 Uploads are limited to `image/jpeg`, `image/png`, `image/gif`, `image/webp` and 10 MB, enforced server-side while streaming to disk.
+
+`/public/feed` returns `{ items, next_cursor }`. Pass `next_cursor` back as `?cursor=` for the following page; `null` means the end.
 
 ## Frontend routes
 
@@ -83,8 +115,9 @@ Uploads are limited to `image/jpeg`, `image/png`, `image/gif`, `image/webp` and 
 |---|---|---|
 | `/login` | guest | Login form |
 | `/register` | guest | Sign-up form |
-| `/dashboard` | **protected** | Upload, grid, edit, delete, share |
-| `/s/:token` | public | Single shared image |
+| `/dashboard` | **protected** | Upload, grid, edit, delete, share, publish |
+| `/explore` | public | Published photos, infinite scroll, likes |
+| `/s/:token` | public | Single shared image, with like |
 
 `/` redirects to `/dashboard`; unauthenticated visits redirect to `/login`.
 
@@ -172,14 +205,29 @@ Other frontend commands:
 ```bash
 npm run build      # production build into dist/
 npm run preview    # serve the production build locally
+npm run lint       # ESLint (flat config, React + hooks rules)
+npm run lint:fix   # ESLint with autofix
 ```
+
+### Tests
+
+```bash
+cd backend
+.venv\Scripts\activate      # source .venv/bin/activate on macOS/Linux
+pip install pytest httpx
+pytest
+```
+
+Tests run against a temporary database and upload directory, so they never touch your real data.
 
 ### First run
 
 1. Go to the app (http://localhost:3000 for Docker, http://localhost:5173 for local dev).
 2. **Sign up** with an email and a password of at least 8 characters.
 3. You land on the dashboard — pick a file, give it a title, hit **Upload**.
-4. **Edit** renames or replaces the picture, **Delete** removes it, **Share** gives you a public link you can copy and send to anyone.
+4. **Edit** renames or replaces the picture, **Delete** removes it.
+5. **Share** gives you an unlisted link to copy and send to one person.
+6. **Publish** puts the photo in the public gallery at `/explore`, where anyone can see it and logged-in visitors can like it.
 
 ### Resetting the data
 
@@ -212,7 +260,8 @@ rm backend/gallery.db && rm -rf backend/uploads    # PowerShell: Remove-Item
 
 ## Notes and next steps
 
-- Tables are created on boot via `create_all`. Add Alembic before you start changing models in production.
+- Tables are created on boot via `create_all`, which builds missing *tables* but never alters existing ones. `app/migrate.py` adds columns that appeared after a database was first created, so upgrading in place doesn't lose data. Move to Alembic once changes stop being purely additive.
+- Likes are tied to accounts on purpose. Anonymous liking would need a spoofable visitor id and would make un-liking unreliable.
 - SQLite + local disk is the starting point by design; moving to Postgres + S3 is a config and storage-layer change, not an API change.
 - The token lives in `localStorage`, which is simple but readable by any script on the page. For a hardened deployment, move to an httpOnly refresh cookie.
 - Generate a real secret before deploying: `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
