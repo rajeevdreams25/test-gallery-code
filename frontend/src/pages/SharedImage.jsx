@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
+import LikeButton from '../components/LikeButton'
 
 export default function SharedImage() {
   const { token } = useParams()
@@ -23,9 +24,20 @@ export default function SharedImage() {
         {/* Public endpoint — no auth header needed, so the browser can load it directly. */}
         <img src={api.publicFileUrl(token)} alt={image.title} />
         <div className="card-body">
-          <h2>{image.title}</h2>
+          <div className="row space-between">
+            <h2>{image.title}</h2>
+            <LikeButton
+              token={token}
+              count={image.like_count}
+              liked={image.liked_by_me}
+              onChange={(result) => setImage((prev) => ({ ...prev, ...result }))}
+              onError={setError}
+            />
+          </div>
           {image.description && <p className="muted">{image.description}</p>}
-          <p className="muted small">Shared from a Personal Gallery</p>
+          <p className="muted small">
+            Shared from a Personal Gallery · <Link to="/explore">Explore public photos</Link>
+          </p>
         </div>
       </div>
     </div>

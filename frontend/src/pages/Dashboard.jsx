@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import ImageCard from '../components/ImageCard'
@@ -28,6 +29,7 @@ export default function Dashboard() {
       <header className="topbar">
         <h1>My Gallery</h1>
         <div className="row">
+          <Link to="/explore">Explore</Link>
           <span className="muted small">{user?.email}</span>
           <button className="ghost" onClick={logout}>
             Log out

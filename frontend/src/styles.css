@@ -205,6 +205,53 @@ button.danger {
   gap: 0.6rem;
 }
 
+.row.space-between {
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+}
+
+.center-text {
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.badge {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.like {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.like:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.like.liked {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+a.thumb {
+  display: block;
+}
+
 .share-box {
   display: flex;
   gap: 0.4rem;

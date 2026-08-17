@@ -93,6 +93,22 @@ export const api = {
 
   revokeShare: (id) => request(`/images/${id}/share`, { method: 'DELETE' }),
 
+  publishImage: (id) => request(`/images/${id}/publish`, { method: 'POST' }),
+
+  unpublishImage: (id) => request(`/images/${id}/publish`, { method: 'DELETE' }),
+
+  // Readable logged out; the token is sent when present so the server can
+  // mark which photos this viewer already liked.
+  publicFeed: (cursor, limit = 24) => {
+    const params = new URLSearchParams({ limit })
+    if (cursor) params.set('cursor', cursor)
+    return request(`/public/feed?${params}`)
+  },
+
+  likeImage: (token) => request(`/public/${token}/like`, { method: 'POST' }),
+
+  unlikeImage: (token) => request(`/public/${token}/like`, { method: 'DELETE' }),
+
   imageBlobUrl: (id) => fetchBlobUrl(`/images/${id}/file`),
 
   publicImage: (token) => request(`/public/${token}`, { auth: false }),

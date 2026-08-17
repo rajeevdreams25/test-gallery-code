@@ -1,12 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from . import migrate
 from .config import settings
 from .database import Base, engine
 from .routers import auth, images, public
 
-# SQLite + local disk: create the schema on boot. Swap for Alembic when the
-# model starts changing in production.
+# SQLite + local disk: create the schema on boot, then add any columns that
+# appeared after this database was first created. Swap for Alembic when the
+# model starts changing in ways that are not purely additive.
+migrate.run(engine)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Personal Gallery API", version="1.0.0")

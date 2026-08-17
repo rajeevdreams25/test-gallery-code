@@ -4,6 +4,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import SharedImage from './pages/SharedImage'
+import Explore from './pages/Explore'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -47,6 +48,7 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route path="/explore" element={<Explore />} />
           <Route path="/s/:token" element={<SharedImage />} />
           <Route path="*" element={<div className="center muted">Page not found</div>} />
         </Routes>

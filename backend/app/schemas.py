@@ -37,6 +37,9 @@ class ImageOut(BaseModel):
     content_type: str
     size: int
     share_token: str | None
+    is_public: bool
+    published_at: datetime | None
+    like_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -50,7 +53,38 @@ class PublicImageOut(BaseModel):
     description: str
     content_type: str
     created_at: datetime
+    like_count: int = 0
+    liked_by_me: bool = False
 
 
 class ShareOut(BaseModel):
     share_token: str
+
+
+class PublishOut(BaseModel):
+    is_public: bool
+    published_at: datetime | None
+    share_token: str | None
+
+
+class FeedItem(BaseModel):
+    """One card in the public gallery. Keyed by share_token, never by row id."""
+
+    share_token: str
+    title: str
+    description: str
+    content_type: str
+    published_at: datetime | None
+    like_count: int
+    liked_by_me: bool
+
+
+class FeedPage(BaseModel):
+    items: list[FeedItem]
+    # Opaque cursor for the next page; null means the end of the feed.
+    next_cursor: str | None
+
+
+class LikeOut(BaseModel):
+    like_count: int
+    liked_by_me: bool

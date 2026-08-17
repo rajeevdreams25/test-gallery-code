@@ -1,13 +1,14 @@
 import secrets
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Image, User
-from ..schemas import ImageOut, ShareOut
+from ..models import Image, Like, User
+from ..schemas import ImageOut, PublishOut, ShareOut
 from ..security import get_current_user
 from ..storage import delete_file, path_for, save_upload
 
@@ -22,13 +23,28 @@ def _owned_image(image_id: int, db: Session, user: User) -> Image:
     return image
 
 
+def _with_likes(image: Image, db: Session) -> ImageOut:
+    count = db.scalar(select(func.count(Like.id)).where(Like.image_id == image.id)) or 0
+    return ImageOut.model_validate(image).model_copy(update={"like_count": count})
+
+
 @router.get("", response_model=list[ImageOut])
 def list_images(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[Image]:
-    stmt = select(Image).where(Image.owner_id == current_user.id).order_by(Image.created_at.desc())
-    return list(db.scalars(stmt))
+) -> list[ImageOut]:
+    # One grouped query rather than a count per image.
+    stmt = (
+        select(Image, func.count(Like.id).label("like_count"))
+        .outerjoin(Like, Like.image_id == Image.id)
+        .where(Image.owner_id == current_user.id)
+        .group_by(Image.id)
+        .order_by(Image.created_at.desc())
+    )
+    return [
+        ImageOut.model_validate(image).model_copy(update={"like_count": count})
+        for image, count in db.execute(stmt).all()
+    ]
 
 
 @router.post("", response_model=ImageOut, status_code=status.HTTP_201_CREATED)
@@ -61,8 +77,8 @@ def get_image(
     image_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> Image:
-    return _owned_image(image_id, db, current_user)
+) -> ImageOut:
+    return _with_likes(_owned_image(image_id, db, current_user), db)
 
 
 @router.get("/{image_id}/file")
@@ -83,7 +99,7 @@ def update_image(
     file: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> Image:
+) -> ImageOut:
     image = _owned_image(image_id, db, current_user)
 
     if title is not None:
@@ -102,7 +118,7 @@ def update_image(
 
     db.commit()
     db.refresh(image)
-    return image
+    return _with_likes(image, db)
 
 
 @router.delete("/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -144,4 +160,58 @@ def revoke_share(
 ) -> None:
     image = _owned_image(image_id, db, current_user)
     image.share_token = None
+    # The gallery serves photos through the share token, so pulling the link
+    # necessarily removes the photo from the gallery too.
+    image.is_public = False
+    image.published_at = None
     db.commit()
+
+
+@router.post("/{image_id}/publish", response_model=PublishOut)
+def publish_image(
+    image_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PublishOut:
+    """List the photo in the public gallery.
+
+    Publishing implies a shareable link, so this mints one if the photo does
+    not already have it. Sharing alone never publishes - an unlisted link
+    stays out of the gallery until the owner asks for this.
+    """
+    image = _owned_image(image_id, db, current_user)
+
+    if not image.share_token:
+        image.share_token = secrets.token_urlsafe(32)
+    if not image.is_public:
+        image.is_public = True
+        image.published_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(image)
+    return PublishOut(
+        is_public=image.is_public,
+        published_at=image.published_at,
+        share_token=image.share_token,
+    )
+
+
+@router.delete("/{image_id}/publish", response_model=PublishOut)
+def unpublish_image(
+    image_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PublishOut:
+    """Remove from the gallery but keep the unlisted link working."""
+    image = _owned_image(image_id, db, current_user)
+
+    image.is_public = False
+    image.published_at = None
+    db.commit()
+    db.refresh(image)
+
+    return PublishOut(
+        is_public=image.is_public,
+        published_at=image.published_at,
+        share_token=image.share_token,
+    )

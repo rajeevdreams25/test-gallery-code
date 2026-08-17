@@ -11,6 +11,10 @@ from .database import get_db
 from .models import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+# Same scheme, but a missing header yields None instead of a 401. Used by
+# public endpoints that show a little more when the caller happens to be
+# logged in (e.g. whether they already liked a photo).
+optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 credentials_error = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -53,3 +57,21 @@ def get_current_user(
     if user is None:
         raise credentials_error
     return user
+
+
+def get_current_user_optional(
+    token: str | None = Depends(optional_oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Like get_current_user, but anonymous callers are allowed through.
+
+    A bad token is treated as anonymous rather than an error, so a stale
+    session never blocks a page that the public can read anyway.
+    """
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        return db.get(User, int(payload["sub"]))
+    except (jwt.PyJWTError, KeyError, ValueError):
+        return None

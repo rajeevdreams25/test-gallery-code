@@ -71,12 +71,22 @@ export default function ImageCard({ image, onChanged, onDeleted, onError }) {
   const toggleShare = () =>
     run(async () => {
       if (image.share_token) {
+        // Revoking the link also delists the photo, since the gallery serves
+        // photos through that token.
         await api.revokeShare(image.id)
-        onChanged({ ...image, share_token: null })
+        onChanged({ ...image, share_token: null, is_public: false, published_at: null })
       } else {
         const { share_token } = await api.shareImage(image.id)
         onChanged({ ...image, share_token })
       }
+    })
+
+  const togglePublish = () =>
+    run(async () => {
+      const result = image.is_public
+        ? await api.unpublishImage(image.id)
+        : await api.publishImage(image.id)
+      onChanged({ ...image, ...result })
     })
 
   const copyLink = async () => {
@@ -124,7 +134,14 @@ export default function ImageCard({ image, onChanged, onDeleted, onError }) {
         </form>
       ) : (
         <div className="card-body">
-          <h3>{image.title}</h3>
+          <div className="row space-between">
+            <h3>{image.title}</h3>
+            {image.is_public && (
+              <span className="muted small" title="Likes in the public gallery">
+                ♥ {image.like_count}
+              </span>
+            )}
+          </div>
           {image.description && <p className="muted small">{image.description}</p>}
 
           <div className="row">
@@ -134,10 +151,17 @@ export default function ImageCard({ image, onChanged, onDeleted, onError }) {
             <button className="ghost" onClick={toggleShare} disabled={busy}>
               {image.share_token ? 'Unshare' : 'Share'}
             </button>
+            <button className="ghost" onClick={togglePublish} disabled={busy}>
+              {image.is_public ? 'Unpublish' : 'Publish'}
+            </button>
             <button className="ghost danger" onClick={remove} disabled={busy}>
               Delete
             </button>
           </div>
+
+          {image.is_public && (
+            <p className="badge">Listed in the public gallery</p>
+          )}
 
           {shareUrl && (
             <div className="share-box">
