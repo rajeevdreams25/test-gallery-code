@@ -1,15 +1,16 @@
-PERSONAL GALLERY - PROJECT REQUIREMENTS
+FRAMED - PROJECT REQUIREMENTS
 
-Repository : https://github.com/rajeevdreams25/test-code
+Project    : Framed, a personal photo gallery
+Repository : https://github.com/rajeevdreams25/test-gallery-code
 Version    : 1.1
 Date       : 2026-08-17
 Status     : Implemented
 
 1. PURPOSE
-A web application that lets a registered user store pictures privately, share
-any single picture through an unlisted link, and optionally publish pictures
-to a public gallery that anyone can browse. It must guarantee three things at
-once:
+Framed is a web application that lets a registered user store pictures
+privately, share any single picture through an unlisted link, and optionally
+publish pictures to a public gallery that anyone can browse. It must guarantee
+three things at once:
   a) By default, a user's images are visible only to that user.
   b) A user can make one image readable by anyone who holds its link, without
      exposing the rest of their gallery, and can withdraw that access later.

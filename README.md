@@ -1,4 +1,4 @@
-# Personal Gallery
+# Framed
 
 A personal image gallery. Log in, upload your pictures to a private dashboard, edit or delete them, share any single image as an unlisted link, or publish it to a public gallery that anyone can browse and like.
 
