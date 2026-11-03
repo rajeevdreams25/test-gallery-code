@@ -2,7 +2,7 @@ FRAMED - PROJECT REQUIREMENTS
 
 Project    : Framed, a personal photo gallery
 Repository : https://github.com/rajeevdreams25/test-gallery-code
-Version    : 1.1
+Version    : 1.2
 Date       : 2026-08-17
 Status     : Implemented
 
